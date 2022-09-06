@@ -4,6 +4,8 @@ import static org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 
@@ -21,11 +24,17 @@ import reactor.core.publisher.FluxSink;
 @CrossOrigin("*")
 public class RickrollapiApplication {
 
+    private static final String WEBHOOK_URL =
+        "https://thisisglobal.webhook.office.com/webhookb2/f206fe16-50cf-48e9-9f35-f2be428d956b@be189d14-1d13-4148-9edf-47fff7e918a8/IncomingWebhook/fd02fe1382fd4273acd7aa64466fa9fe/28562966-768c-4208-85e7-d4211d10e459";
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
     public static void main(String[] args) {
         SpringApplication.run(RickrollapiApplication.class, args);
     }
 
     final ScheduledExecutorService oneThreadScheduleExecutor = Executors.newScheduledThreadPool(10);
+    final ExecutorService webhookExecutorService = Executors.newFixedThreadPool(10);
 
     @GetMapping(value = "/rickroll/{numberOfSeconds}", produces = TEXT_EVENT_STREAM_VALUE)
     public Flux<String> add(@PathVariable final int numberOfSeconds) {
@@ -47,6 +56,8 @@ public class RickrollapiApplication {
         final int totalPlayTime) {
 
         emitter.next(current.getLyric());
+        webhookExecutorService.submit(
+            () -> restTemplate.postForEntity(WEBHOOK_URL, Map.of("text", current.getLyric()), String.class));
 
         if (nextIndex < lyrics.size()) {
             Lyric next = lyrics.get(nextIndex);

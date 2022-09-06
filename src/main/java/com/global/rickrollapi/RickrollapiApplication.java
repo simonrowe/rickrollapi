@@ -4,6 +4,9 @@ import static org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -22,6 +25,8 @@ public class RickrollapiApplication {
         SpringApplication.run(RickrollapiApplication.class, args);
     }
 
+    final ScheduledExecutorService oneThreadScheduleExecutor = Executors.newScheduledThreadPool(10);
+
     @GetMapping(value = "/rickroll/{numberOfSeconds}", produces = TEXT_EVENT_STREAM_VALUE)
     public Flux<String> add(@PathVariable final int numberOfSeconds) {
         return Flux.create((emitter) -> lyrics(emitter, numberOfSeconds));
@@ -29,20 +34,30 @@ public class RickrollapiApplication {
 
     private void lyrics(final FluxSink<String> emitter, final int numberOfSeconds) {
         final List<Lyric> lyrics = Lyric.allLyrics();
-        for (int i = 0; i < lyrics.size(); i++) {
-            Lyric current = lyrics.get(i);
-            emitter.next(current.getLyric());
-            if (i < lyrics.size() - 1) {
-                Lyric next = lyrics.get(i + 1);
-                if (numberOfSeconds < next.getStartSecond()) {
-                    break;
-                }
-                try {
-                    Long pauseSpace = (long) (next.getStartSecond() - current.getStartSecond()) * 1000;
-                    Thread.sleep(pauseSpace);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+        Lyric current = lyrics.get(0);
+        publishLyric(lyrics, current, 1, emitter, 0, numberOfSeconds);
+    }
+
+    private void publishLyric(
+        final List<Lyric> lyrics,
+        final Lyric current,
+        final int nextIndex,
+        final FluxSink<String> emitter,
+        final int currentTime,
+        final int totalPlayTime) {
+
+        emitter.next(current.getLyric());
+
+        if (nextIndex < lyrics.size()) {
+            Lyric next = lyrics.get(nextIndex);
+
+            if (totalPlayTime >= next.getStartSecond()) {
+                int delay = next.getStartSecond() - current.getStartSecond();
+                oneThreadScheduleExecutor.schedule(
+                    () -> publishLyric(lyrics, next, nextIndex + 1, emitter, currentTime + delay, totalPlayTime),
+                    delay,
+                    TimeUnit.SECONDS);
+                return;
             }
         }
         emitter.complete();
